@@ -10,17 +10,35 @@ const SCALE_MODES = [
   { value: 'share', label: 'シェア（全国比%）', hint: '全国計に対する割合。シェア変化を強調' },
 ];
 
-const BIG3 = ['兵庫', '京都', '新潟'];
 const DEFAULT_DATA_TYPE = 'production'; // 初期表示は製成数量
+
+// データタイプごとの除外候補
+const EXCLUDE_PRESETS = {
+  production: {
+    prefs: ['兵庫', '京都', '新潟'],
+    label: '主要3県（兵庫・京都・新潟）',
+    hint: '中規模県の動きが見やすくなります',
+  },
+  sales: {
+    prefs: ['東京'],
+    label: '東京',
+    hint: '突出する消費地を除くと他県の動きが見えます',
+  },
+};
 
 export default function MapPage() {
   const { years, salesByYear, productionByYear, regions, regionColors } = salesData;
 
   const [dataType, setDataType] = useState(DEFAULT_DATA_TYPE);
   const [scaleMode, setScaleMode] = useState('global');
-  const [excludeBig3, setExcludeBig3] = useState(false);
+  // データタイプごとに除外フラグを独立管理
+  const [excludeFlags, setExcludeFlags] = useState({ production: false, sales: false });
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(500);
+
+  const preset = EXCLUDE_PRESETS[dataType];
+  const excluded = excludeFlags[dataType];
+  const excludePrefs = excluded ? preset.prefs : [];
 
   // dataType に応じた利用可能年度（旧い順）
   const availableYears = useMemo(() => (
@@ -41,14 +59,14 @@ export default function MapPage() {
   const rawSourceByYear = dataType === 'production' ? productionByYear : salesByYear;
 
   const sourceByYear = useMemo(() => {
-    if (!excludeBig3) return rawSourceByYear;
-    const big3Set = new Set(BIG3);
+    if (excludePrefs.length === 0) return rawSourceByYear;
+    const excludeSet = new Set(excludePrefs);
     const filtered = {};
     for (const [year, arr] of Object.entries(rawSourceByYear)) {
-      filtered[year] = arr.filter(d => !big3Set.has(d.pref));
+      filtered[year] = arr.filter(d => !excludeSet.has(d.pref));
     }
     return filtered;
-  }, [rawSourceByYear, excludeBig3]);
+  }, [rawSourceByYear, excludePrefs]);
 
   const yearData = sourceByYear[String(currentYear)] || [];
 
@@ -136,22 +154,22 @@ export default function MapPage() {
         ))}
       </div>
 
-      {/* Big 3 除外トグル */}
+      {/* 除外トグル（dataTypeに応じて対象が変わる） */}
       <div className="flex items-center gap-2 flex-wrap">
         <label className="inline-flex items-center gap-2 text-sm cursor-pointer select-none">
           <input
             type="checkbox"
-            checked={excludeBig3}
-            onChange={e => setExcludeBig3(e.target.checked)}
+            checked={excluded}
+            onChange={e =>
+              setExcludeFlags(prev => ({ ...prev, [dataType]: e.target.checked }))
+            }
             className="w-4 h-4 accent-stone-700"
           />
           <span>
-            主要3県（<span className="font-medium">兵庫・京都・新潟</span>）を除外
+            <span className="font-medium">{preset.label}</span> を除外
           </span>
         </label>
-        <span className="text-xs text-stone-400">
-          — 他県の動きが見やすくなります
-        </span>
+        <span className="text-xs text-stone-400">— {preset.hint}</span>
       </div>
 
       {dataType === 'sales' && scaleMode === 'year' && (
@@ -172,7 +190,7 @@ export default function MapPage() {
       />
 
       <div className="text-xs text-stone-500 text-center">
-        {currentYear}年 {excludeBig3 ? '全国計(3県除く)' : '全国計'}:{' '}
+        {currentYear}年 {excluded ? `全国計(${preset.label}除く)` : '全国計'}:{' '}
         <span className="font-bold text-stone-700">{Math.round(yearTotal).toLocaleString()} kL</span>
       </div>
 
@@ -183,7 +201,7 @@ export default function MapPage() {
         regionColors={regionColors}
         allYearsData={sourceByYear}
         scaleMode={scaleMode}
-        excludePrefs={excludeBig3 ? BIG3 : []}
+        excludePrefs={excludePrefs}
       />
 
       {/* 凡例 */}
