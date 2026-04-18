@@ -7,7 +7,15 @@ const WIDTH = 800;
 const HEIGHT = 800;
 const MARGIN = { top: 10, right: 10, bottom: 10, left: 10 };
 
-export default function BubbleMap({ yearData, year, regions, regionColors }) {
+/**
+ * BubbleMap
+ *
+ * scaleMode:
+ *  - 'global'   : 全期間の最大値を基準にスケール固定 → 経年縮小が見える（既定）
+ *  - 'year'     : その年の最大値を基準に正規化 → 年ごとの相対構成
+ *  - 'share'    : 全国計に対するシェア（%）でスケール → シェア変化を強調
+ */
+export default function BubbleMap({ yearData, year, regions, regionColors, allYearsData, scaleMode = 'global' }) {
   const [topoData, setTopoData] = useState(null);
   const [hoveredPref, setHoveredPref] = useState(null);
 
@@ -35,38 +43,70 @@ export default function BubbleMap({ yearData, year, regions, regionColors }) {
     return topojson.feature(topoData, topoData.objects.japan).features;
   }, [topoData]);
 
-  // Value lookup for current year
+  // Per-year total for share mode
+  const yearTotal = useMemo(() => {
+    if (!yearData) return 0;
+    return yearData.reduce((sum, d) => sum + (d.value || 0), 0);
+  }, [yearData]);
+
+  // Value lookup for current year (absolute or share)
   const valueMap = useMemo(() => {
     const map = {};
     if (yearData) {
-      yearData.forEach(d => { map[d.pref] = d.value; });
+      yearData.forEach(d => {
+        if (scaleMode === 'share' && yearTotal > 0) {
+          map[d.pref] = ((d.value || 0) / yearTotal) * 100; // percentage
+        } else {
+          map[d.pref] = d.value || 0;
+        }
+      });
     }
     return map;
-  }, [yearData]);
+  }, [yearData, scaleMode, yearTotal]);
 
-  const maxValue = useMemo(() => {
+  // Domain max for the radius scale
+  const domainMax = useMemo(() => {
+    if (scaleMode === 'share') {
+      // シェアは全年度を通して最大のシェアを取る（通常、東京の12-13%程度）
+      if (!allYearsData) return 15;
+      let maxShare = 0;
+      Object.values(allYearsData).forEach(arr => {
+        const total = arr.reduce((s, d) => s + (d.value || 0), 0);
+        if (total > 0) {
+          arr.forEach(d => {
+            const share = ((d.value || 0) / total) * 100;
+            if (share > maxShare) maxShare = share;
+          });
+        }
+      });
+      return maxShare;
+    }
+    if (scaleMode === 'global' && allYearsData) {
+      // 全期間の最大値を取る
+      let maxVal = 0;
+      Object.values(allYearsData).forEach(arr => {
+        arr.forEach(d => {
+          if ((d.value || 0) > maxVal) maxVal = d.value;
+        });
+      });
+      return maxVal;
+    }
+    // 'year' モード: その年の最大値
     if (!yearData || yearData.length === 0) return 1;
     return Math.max(...yearData.map(d => d.value || 0));
-  }, [yearData]);
+  }, [scaleMode, yearData, allYearsData]);
 
   const radiusScale = useMemo(() => {
-    return d3.scaleSqrt().domain([0, maxValue]).range([2, 45]);
-  }, [maxValue]);
+    return d3.scaleSqrt().domain([0, domainMax]).range([2, 45]);
+  }, [domainMax]);
 
   if (!topoData || !projection) {
     return <div className="text-center py-20 text-stone-400">地図を読み込み中...</div>;
   }
 
-  // Prefecture name mapping: nam_ja includes 県/府/都, our data doesn't
-  const namToShort = (nam_ja) => {
-    if (!nam_ja) return null;
-    return nam_ja.replace(/[県府都]$/, '').replace('北海道', '北海道');
-  };
-
   return (
     <div className="relative">
       <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="w-full max-w-2xl mx-auto">
-        {/* Prefecture boundaries */}
         {features.map((feature, i) => (
           <path
             key={i}
@@ -77,7 +117,6 @@ export default function BubbleMap({ yearData, year, regions, regionColors }) {
           />
         ))}
 
-        {/* Bubbles */}
         {Object.entries(centroids).map(([pref, [lng, lat]]) => {
           const value = valueMap[pref];
           if (!value || value <= 0) return null;
@@ -121,13 +160,14 @@ export default function BubbleMap({ yearData, year, regions, regionColors }) {
         })}
       </svg>
 
-      {/* Tooltip */}
       {hoveredPref && valueMap[hoveredPref] && (
         <div className="absolute top-4 right-4 bg-white shadow-lg rounded-lg px-4 py-3 text-sm border">
           <div className="font-bold text-base">{hoveredPref}</div>
           <div className="text-stone-500">{regions[hoveredPref]}</div>
           <div className="mt-1 text-lg font-bold">
-            {Math.round(valueMap[hoveredPref]).toLocaleString()} kL
+            {scaleMode === 'share'
+              ? `${valueMap[hoveredPref].toFixed(2)} %`
+              : `${Math.round(valueMap[hoveredPref]).toLocaleString()} kL`}
           </div>
           <div className="text-stone-400 text-xs">{year}年</div>
         </div>

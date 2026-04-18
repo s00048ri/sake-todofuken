@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cp '/Users/rentaroiida/.claude/projects/-Users-rentaroiida-Library-CloudStorage-GoogleDrive-rentaro-iida-gmail-com--------claude-sake-todofuken/41050b80-0e00-4d3a-80f9-0db5c1d86c38/tool-results/webfetch-1776494198718-xbjqsq.bin' /tmp/estat_0802_2023.xlsx)",
+      "Bash(python3 -c ':*)",
+      "Read(//Users/rentaroiida/.nvm/versions/**)",
+      "Read(//opt/homebrew/bin/**)",
+      "Read(//usr/local/bin/**)"
+    ]
+  }
+}
