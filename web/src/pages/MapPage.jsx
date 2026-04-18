@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import BubbleMap from '../components/BubbleMap';
 import YearSlider from '../components/YearSlider';
 import { SourceBanner } from '../components/SourceBadge';
@@ -11,23 +11,35 @@ const SCALE_MODES = [
 ];
 
 const BIG3 = ['兵庫', '京都', '新潟'];
+const DEFAULT_DATA_TYPE = 'production'; // 初期表示は製成数量
 
 export default function MapPage() {
   const { years, salesByYear, productionByYear, regions, regionColors } = salesData;
 
-  const [currentYear, setCurrentYear] = useState(years[years.length - 1]);
-  const [dataType, setDataType] = useState('sales');
+  const [dataType, setDataType] = useState(DEFAULT_DATA_TYPE);
   const [scaleMode, setScaleMode] = useState('global');
   const [excludeBig3, setExcludeBig3] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [speed, setSpeed] = useState(500);
 
-  const availableYears = dataType === 'production'
-    ? years.filter(y => productionByYear[String(y)])
-    : years;
+  // dataType に応じた利用可能年度（旧い順）
+  const availableYears = useMemo(() => (
+    dataType === 'production'
+      ? years.filter(y => productionByYear[String(y)])
+      : years
+  ), [dataType, years, productionByYear]);
+
+  // 初期表示は最古年度から（1997年, 1963年など）
+  const [currentYear, setCurrentYear] = useState(availableYears[0]);
+
+  // dataType 切替時も最古年度にリセット
+  useEffect(() => {
+    setCurrentYear(availableYears[0]);
+    setIsPlaying(false);
+  }, [dataType, availableYears]);
 
   const rawSourceByYear = dataType === 'production' ? productionByYear : salesByYear;
 
-  // Big3を除外したデータ
   const sourceByYear = useMemo(() => {
     if (!excludeBig3) return rawSourceByYear;
     const big3Set = new Set(BIG3);
@@ -40,29 +52,38 @@ export default function MapPage() {
 
   const yearData = sourceByYear[String(currentYear)] || [];
 
+  // 再生ロジック: useEffect + setInterval
+  useEffect(() => {
+    if (!isPlaying) return;
+    const timer = setInterval(() => {
+      setCurrentYear(prev => {
+        const idx = availableYears.indexOf(prev);
+        if (idx >= availableYears.length - 1) {
+          setIsPlaying(false);
+          return prev;
+        }
+        return availableYears[idx + 1];
+      });
+    }, speed);
+    return () => clearInterval(timer);
+  }, [isPlaying, speed, availableYears]);
+
   const handlePlayToggle = useCallback(() => {
     if (isPlaying) {
       setIsPlaying(false);
-    } else {
-      setIsPlaying(true);
-      const timer = setInterval(() => {
-        setCurrentYear(prev => {
-          const idx = availableYears.indexOf(prev);
-          if (idx >= availableYears.length - 1) {
-            setIsPlaying(false);
-            clearInterval(timer);
-            return prev;
-          }
-          return availableYears[idx + 1];
-        });
-      }, 500);
-      return () => clearInterval(timer);
+      return;
     }
-  }, [isPlaying, availableYears]);
+    // 最終年度で再生を押された場合は最古年度から再開
+    const idx = availableYears.indexOf(currentYear);
+    if (idx >= availableYears.length - 1) {
+      setCurrentYear(availableYears[0]);
+    }
+    setIsPlaying(true);
+  }, [isPlaying, availableYears, currentYear]);
 
   const yearTotal = yearData.reduce((s, d) => s + (d.value || 0), 0);
 
-  const sharePct = dataType === 'sales'
+  const salesNote = dataType === 'sales'
     ? '販売数量は人口分布に連動するため都道府県シェアが安定しています。動きを見るには「シェア」または「製成数量」をお試しください。'
     : '';
 
@@ -77,16 +98,16 @@ export default function MapPage() {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => { setDataType('sales'); setCurrentYear(years[years.length - 1]); }}
-            className={`px-3 py-1 text-sm rounded ${dataType === 'sales' ? 'bg-stone-800 text-white' : 'bg-stone-200'}`}
-          >
-            販売数量
-          </button>
-          <button
-            onClick={() => { setDataType('production'); setCurrentYear(2023); }}
+            onClick={() => setDataType('production')}
             className={`px-3 py-1 text-sm rounded ${dataType === 'production' ? 'bg-stone-800 text-white' : 'bg-stone-200'}`}
           >
             製成数量
+          </button>
+          <button
+            onClick={() => setDataType('sales')}
+            className={`px-3 py-1 text-sm rounded ${dataType === 'sales' ? 'bg-stone-800 text-white' : 'bg-stone-200'}`}
+          >
+            販売数量
           </button>
         </div>
       </div>
@@ -135,7 +156,7 @@ export default function MapPage() {
 
       {dataType === 'sales' && scaleMode === 'year' && (
         <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 p-2 rounded">
-          ⚠ {sharePct}
+          ⚠ {salesNote}
         </p>
       )}
 
@@ -146,6 +167,8 @@ export default function MapPage() {
         onChange={setCurrentYear}
         isPlaying={isPlaying}
         onPlayToggle={handlePlayToggle}
+        speed={speed}
+        onSpeedChange={setSpeed}
       />
 
       <div className="text-xs text-stone-500 text-center">

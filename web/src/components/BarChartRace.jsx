@@ -45,8 +45,15 @@ export default function BarChartRace({ data, dataType = 'production', excludePre
   const maxValue = topData.length > 0 ? topData[0].value : 1;
 
   const togglePlay = useCallback(() => {
-    setIsPlaying(prev => !prev);
-  }, []);
+    setIsPlaying(prev => {
+      if (prev) return false;
+      // 終端まで到達していたら最古年度に戻してから再生
+      if (yearIndex >= availableYears.length - 1) {
+        setYearIndex(0);
+      }
+      return true;
+    });
+  }, [yearIndex, availableYears.length]);
 
   useEffect(() => {
     if (isPlaying) {
