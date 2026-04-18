@@ -36,28 +36,25 @@ export default function BubbleMap({ yearData, year, regions, regionColors, allYe
     d3.json(`${import.meta.env.BASE_URL}japan.topojson`).then(setTopoData);
   }, []);
 
-  // 本土限定のバウンディングボックスをGeoJSON Polygonとして構築
-  const boundsFeature = useMemo(() => ({
-    type: 'Feature',
-    geometry: {
-      type: 'Polygon',
-      coordinates: [[
-        [MAP_BOUNDS.west, MAP_BOUNDS.south],
-        [MAP_BOUNDS.east, MAP_BOUNDS.south],
-        [MAP_BOUNDS.east, MAP_BOUNDS.north],
-        [MAP_BOUNDS.west, MAP_BOUNDS.north],
-        [MAP_BOUNDS.west, MAP_BOUNDS.south],
-      ]],
-    },
+  // バウンディングボックスを MultiPoint として構築
+  // （Polygonだと fitExtent が大圏コースのbounds計算で歪むため、コーナー点を使う）
+  const boundsGeometry = useMemo(() => ({
+    type: 'MultiPoint',
+    coordinates: [
+      [MAP_BOUNDS.west, MAP_BOUNDS.south],
+      [MAP_BOUNDS.east, MAP_BOUNDS.south],
+      [MAP_BOUNDS.east, MAP_BOUNDS.north],
+      [MAP_BOUNDS.west, MAP_BOUNDS.north],
+    ],
   }), []);
 
   // バウンディングボックスにフィットさせた投影法
   const projection = useMemo(() => {
     return d3.geoMercator().fitExtent(
       [[MARGIN.left, MARGIN.top], [WIDTH - MARGIN.right, HEIGHT - MARGIN.bottom]],
-      boundsFeature
+      boundsGeometry
     );
-  }, [boundsFeature]);
+  }, [boundsGeometry]);
 
   const pathGenerator = useMemo(() => {
     if (!projection) return null;
