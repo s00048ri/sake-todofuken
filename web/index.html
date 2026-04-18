@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>日本酒の地理学 — 都道府県別清酒生産量の変遷</title>
+    <meta name="description" content="日本の清酒（日本酒）の都道府県別生産量の長期パネルデータ（1963-2024）をインタラクティブに可視化。公的統計を統合。" />
+    <script>
+      // GitHub Pages SPA 404.html リダイレクトから ?p=/foo/bar を復元
+      (function (l) {
+        if (l.search[1] === 'p' && l.search[2] === '=') {
+          var q = {};
+          l.search.slice(1).split('&').forEach(function (v) {
+            var a = v.split('=');
+            q[a[0]] = a.slice(1).join('=').replace(/~and~/g, '&');
+          });
+          if (q.p !== undefined) {
+            window.history.replaceState(null, null,
+              l.pathname.slice(0, -1) + (q.p || '') +
+              (q.q ? '?' + q.q : '') +
+              l.hash
+            );
+          }
+        }
+      }(window.location))
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

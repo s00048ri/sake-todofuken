@@ -1,0 +1,55 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Google Drive
+.tmp.driveupload
+.tmp.drivedownload
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+.env/
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Node / Vite
+web/node_modules/
+web/dist/
+web/.vite/
+web/*.log
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Misc
+.env
+.env.local
+*.tmp
+
+# Large raw files（データソースは再取得可能なので含めない選択肢もあるが、
+# 本プロジェクトはデータ取得の再現性のためraw/ も含める）
+# data/raw/ は含める。ただしサイズ管理は注意
+
+# 探索時にダウンロードしたが最終パイプラインでは未使用のファイル
+data/raw/jikeiretsu/
