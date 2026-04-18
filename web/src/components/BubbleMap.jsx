@@ -4,50 +4,52 @@ import * as topojson from 'topojson-client';
 import centroids from '../data/prefectures.json';
 
 // 本州・北海道・四国・九州 (本土) に限定
-// 沖縄県 および 東京都小笠原諸島・鹿児島県南西諸島等はクリップ
 const MAP_BOUNDS = {
   west: 128.5,   // 長崎県対馬付近
   east: 146.0,   // 北海道東端
-  south: 30.8,   // 鹿児島県本土南端 (奄美諸島除外)
+  south: 30.8,   // 鹿児島県本土南端（奄美諸島は除外）
   north: 45.7,   // 北海道宗谷岬
 };
 
-// 描画領域（viewBox）
+// 描画領域
 const WIDTH = 1000;
 const HEIGHT = 900;
 const MARGIN = { top: 10, right: 10, bottom: 10, left: 10 };
 
-// 地理的にクリップする都道府県（データがない沖縄）
-const GEO_EXCLUDED = new Set(['沖縄']);
+// 沖縄インセット（天気予報スタイルの左上別枠）
+const INSET = {
+  x: 20,
+  y: 40,
+  width: 200,
+  height: 170,
+  bounds: {
+    west: 126.5,   // 慶良間諸島付近
+    east: 128.4,   // 大東諸島手前
+    south: 24.0,   // 八重山諸島
+    north: 27.0,   // 本島北端
+  },
+};
 
 /**
  * BubbleMap
  *
- * scaleMode:
- *  - 'global'  : 全期間の最大値を基準にスケール固定 → 経年縮小が見える（既定）
- *  - 'year'    : その年の最大値を基準に正規化
- *  - 'share'   : 全国計に対するシェア(%)でスケール
+ * scaleMode: 'global' | 'year' | 'share'
+ * excludePrefs: ユーザーが除外する都道府県（バブルも県境界も非表示）
  *
- * excludePrefs: ユーザーが明示的に除外したい都道府県の配列（バブルも地図境界線も非表示）
+ * 沖縄は本土の地理的範囲外のため、左上インセットに同一radiusScaleで別枠表示。
  */
 export default function BubbleMap({ yearData, year, regions, regionColors, allYearsData, scaleMode = 'global', excludePrefs }) {
-  const userExcluded = useMemo(() => new Set(excludePrefs || []), [excludePrefs]);
-  // 最終的な除外セット（地理的 + ユーザー指定）
-  const EXCLUDED_PREFS = useMemo(() => {
-    const s = new Set(GEO_EXCLUDED);
-    userExcluded.forEach(p => s.add(p));
-    return s;
-  }, [userExcluded]);
   const [topoData, setTopoData] = useState(null);
   const [hoveredPref, setHoveredPref] = useState(null);
+
+  const userExcluded = useMemo(() => new Set(excludePrefs || []), [excludePrefs]);
 
   useEffect(() => {
     d3.json(`${import.meta.env.BASE_URL}japan.topojson`).then(setTopoData);
   }, []);
 
-  // バウンディングボックスを MultiPoint として構築
-  // （Polygonだと fitExtent が大圏コースのbounds計算で歪むため、コーナー点を使う）
-  const boundsGeometry = useMemo(() => ({
+  // 本土用 projection (MultiPoint で fitExtent)
+  const mainBoundsGeometry = useMemo(() => ({
     type: 'MultiPoint',
     coordinates: [
       [MAP_BOUNDS.west, MAP_BOUNDS.south],
@@ -57,41 +59,66 @@ export default function BubbleMap({ yearData, year, regions, regionColors, allYe
     ],
   }), []);
 
-  // バウンディングボックスにフィットさせた投影法
   const projection = useMemo(() => {
     return d3.geoMercator().fitExtent(
       [[MARGIN.left, MARGIN.top], [WIDTH - MARGIN.right, HEIGHT - MARGIN.bottom]],
-      boundsGeometry
+      mainBoundsGeometry
     );
-  }, [boundsGeometry]);
+  }, [mainBoundsGeometry]);
 
-  const pathGenerator = useMemo(() => {
-    if (!projection) return null;
-    return d3.geoPath().projection(projection);
-  }, [projection]);
+  const pathGenerator = useMemo(() => (
+    projection ? d3.geoPath().projection(projection) : null
+  ), [projection]);
 
-  // 沖縄を除外した都道府県境界
-  const features = useMemo(() => {
-    if (!topoData) return [];
+  // 沖縄インセット用 projection
+  const insetProjection = useMemo(() => {
+    return d3.geoMercator().fitExtent(
+      [[INSET.x + 8, INSET.y + 22], [INSET.x + INSET.width - 8, INSET.y + INSET.height - 10]],
+      {
+        type: 'MultiPoint',
+        coordinates: [
+          [INSET.bounds.west, INSET.bounds.south],
+          [INSET.bounds.east, INSET.bounds.south],
+          [INSET.bounds.east, INSET.bounds.north],
+          [INSET.bounds.west, INSET.bounds.north],
+        ],
+      }
+    );
+  }, []);
+
+  const insetPath = useMemo(() => (
+    insetProjection ? d3.geoPath().projection(insetProjection) : null
+  ), [insetProjection]);
+
+  // 都道府県境界: 本土と沖縄に分離
+  const { mainlandFeatures, okinawaFeature } = useMemo(() => {
+    if (!topoData) return { mainlandFeatures: [], okinawaFeature: null };
     const all = topojson.feature(topoData, topoData.objects.japan).features;
-    return all.filter(f => {
+    const okinawa = all.find(f => {
       const name = (f.properties?.nam_ja || '').replace(/[県府都]$/, '');
-      return !EXCLUDED_PREFS.has(name);
+      return name === '沖縄';
+    }) || null;
+    const mainland = all.filter(f => {
+      const name = (f.properties?.nam_ja || '').replace(/[県府都]$/, '');
+      return name !== '沖縄' && !userExcluded.has(name);
     });
-  }, [topoData]);
+    return { mainlandFeatures: mainland, okinawaFeature: okinawa };
+  }, [topoData, userExcluded]);
 
-  // 年度合計（シェアモード用）
+  // 年度合計（シェアモード用）— 沖縄含む
   const yearTotal = useMemo(() => {
     if (!yearData) return 0;
-    return yearData.reduce((sum, d) => sum + (d.value || 0), 0);
-  }, [yearData]);
+    return yearData
+      .filter(d => !userExcluded.has(d.pref))
+      .reduce((sum, d) => sum + (d.value || 0), 0);
+  }, [yearData, userExcluded]);
 
-  // 値のマップ
+  // 値のマップ（沖縄も含む）
   const valueMap = useMemo(() => {
     const map = {};
     if (yearData) {
       yearData.forEach(d => {
-        if (EXCLUDED_PREFS.has(d.pref)) return;
+        if (userExcluded.has(d.pref)) return;
         if (scaleMode === 'share' && yearTotal > 0) {
           map[d.pref] = ((d.value || 0) / yearTotal) * 100;
         } else {
@@ -100,20 +127,20 @@ export default function BubbleMap({ yearData, year, regions, regionColors, allYe
       });
     }
     return map;
-  }, [yearData, scaleMode, yearTotal]);
+  }, [yearData, scaleMode, yearTotal, userExcluded]);
 
-  // スケールのドメイン最大値
+  // スケールのドメイン最大値（沖縄含む）
   const domainMax = useMemo(() => {
     if (scaleMode === 'share') {
       if (!allYearsData) return 15;
       let maxShare = 0;
       Object.values(allYearsData).forEach(arr => {
         const total = arr
-          .filter(d => !EXCLUDED_PREFS.has(d.pref))
+          .filter(d => !userExcluded.has(d.pref))
           .reduce((s, d) => s + (d.value || 0), 0);
         if (total > 0) {
           arr.forEach(d => {
-            if (EXCLUDED_PREFS.has(d.pref)) return;
+            if (userExcluded.has(d.pref)) return;
             const share = ((d.value || 0) / total) * 100;
             if (share > maxShare) maxShare = share;
           });
@@ -125,7 +152,7 @@ export default function BubbleMap({ yearData, year, regions, regionColors, allYe
       let maxVal = 0;
       Object.values(allYearsData).forEach(arr => {
         arr.forEach(d => {
-          if (EXCLUDED_PREFS.has(d.pref)) return;
+          if (userExcluded.has(d.pref)) return;
           if ((d.value || 0) > maxVal) maxVal = d.value;
         });
       });
@@ -133,9 +160,9 @@ export default function BubbleMap({ yearData, year, regions, regionColors, allYe
     }
     if (!yearData || yearData.length === 0) return 1;
     return Math.max(
-      ...yearData.filter(d => !EXCLUDED_PREFS.has(d.pref)).map(d => d.value || 0)
+      ...yearData.filter(d => !userExcluded.has(d.pref)).map(d => d.value || 0)
     );
-  }, [scaleMode, yearData, allYearsData]);
+  }, [scaleMode, yearData, allYearsData, userExcluded]);
 
   const radiusScale = useMemo(() => {
     return d3.scaleSqrt().domain([0, domainMax]).range([3, 60]);
@@ -145,6 +172,52 @@ export default function BubbleMap({ yearData, year, regions, regionColors, allYe
     return <div className="text-center py-20 text-stone-400">地図を読み込み中...</div>;
   }
 
+  // 沖縄のデータがあるかどうか
+  const okinawaValue = valueMap['沖縄'];
+  const showInset = okinawaFeature && !userExcluded.has('沖縄') && okinawaValue !== undefined && okinawaValue > 0;
+
+  // 沖縄バブル
+  let okinawaBubble = null;
+  if (showInset) {
+    const [olng, olat] = centroids['沖縄'];
+    const [ox, oy] = insetProjection([olng, olat]);
+    const orReg = regions['沖縄'] || '';
+    const ocolor = regionColors[orReg] || '#6b7280';
+    const or = radiusScale(okinawaValue);
+    const isHov = hoveredPref === '沖縄';
+    okinawaBubble = (
+      <g>
+        <circle
+          cx={ox}
+          cy={oy}
+          r={or}
+          fill={ocolor}
+          fillOpacity={isHov ? 0.9 : 0.65}
+          stroke={isHov ? '#1c1917' : ocolor}
+          strokeWidth={isHov ? 2 : 1}
+          style={{ transition: 'r 0.4s ease, fill-opacity 0.2s' }}
+          onMouseEnter={() => setHoveredPref('沖縄')}
+          onMouseLeave={() => setHoveredPref(null)}
+        />
+        {(or > 10 || isHov) && (
+          <text
+            x={ox}
+            y={oy}
+            textAnchor="middle"
+            dominantBaseline="central"
+            fontSize={isHov ? 12 : 10}
+            fontWeight="bold"
+            fill="white"
+            pointerEvents="none"
+            style={{ textShadow: '0 1px 2px rgba(0,0,0,0.6)' }}
+          >
+            沖縄
+          </text>
+        )}
+      </g>
+    );
+  }
+
   return (
     <div className="relative">
       <svg
@@ -152,16 +225,18 @@ export default function BubbleMap({ yearData, year, regions, regionColors, allYe
         className="w-full mx-auto"
         style={{ maxWidth: '900px' }}
       >
-        {/* SVGクリップパス: バウンディングボックス外を非表示にする */}
         <defs>
           <clipPath id="japan-clip">
             <rect x="0" y="0" width={WIDTH} height={HEIGHT} />
           </clipPath>
+          <clipPath id="inset-clip">
+            <rect x={INSET.x} y={INSET.y} width={INSET.width} height={INSET.height} />
+          </clipPath>
         </defs>
 
+        {/* 本土 */}
         <g clipPath="url(#japan-clip)">
-          {/* 県境界（沖縄を除く） */}
-          {features.map((feature, i) => (
+          {mainlandFeatures.map((feature, i) => (
             <path
               key={i}
               d={pathGenerator(feature)}
@@ -171,13 +246,11 @@ export default function BubbleMap({ yearData, year, regions, regionColors, allYe
             />
           ))}
 
-          {/* バブル */}
           {Object.entries(centroids).map(([pref, [lng, lat]]) => {
-            if (EXCLUDED_PREFS.has(pref)) return null;
+            if (pref === '沖縄') return null;  // 沖縄はインセットで描画
+            if (userExcluded.has(pref)) return null;
             const value = valueMap[pref];
             if (!value || value <= 0) return null;
-
-            // バウンディングボックス外は描画しない
             if (lng < MAP_BOUNDS.west || lng > MAP_BOUNDS.east ||
                 lat < MAP_BOUNDS.south || lat > MAP_BOUNDS.north) return null;
 
@@ -220,6 +293,45 @@ export default function BubbleMap({ yearData, year, regions, regionColors, allYe
             );
           })}
         </g>
+
+        {/* 沖縄インセット（データがある時のみ表示） */}
+        {showInset && (
+          <g clipPath="url(#inset-clip)">
+            {/* インセット背景枠 */}
+            <rect
+              x={INSET.x}
+              y={INSET.y}
+              width={INSET.width}
+              height={INSET.height}
+              fill="#fafaf9"
+              stroke="#78716c"
+              strokeWidth={1}
+              strokeDasharray="4,2"
+            />
+            {/* インセットタイトル */}
+            <text
+              x={INSET.x + INSET.width / 2}
+              y={INSET.y + 15}
+              textAnchor="middle"
+              fontSize={11}
+              fontWeight="bold"
+              fill="#57534e"
+            >
+              沖縄県（別スケール表示ではありません）
+            </text>
+            {/* 沖縄県境界 */}
+            {okinawaFeature && (
+              <path
+                d={insetPath(okinawaFeature)}
+                fill="#e7e5e4"
+                stroke="#a8a29e"
+                strokeWidth={0.6}
+              />
+            )}
+            {/* 沖縄バブル */}
+            {okinawaBubble}
+          </g>
+        )}
       </svg>
 
       {/* ツールチップ */}
@@ -237,7 +349,8 @@ export default function BubbleMap({ yearData, year, regions, regionColors, allYe
       )}
 
       <p className="text-xs text-stone-400 text-center mt-1">
-        ※ 本マップは本州・北海道・四国・九州本土のみ表示（沖縄県・南西諸島・小笠原諸島は除外）
+        ※ 本土マップは本州・北海道・四国・九州のみ（南西諸島・小笠原諸島は地理的に除外）。
+        {showInset && ' 沖縄は左上インセット（バブルの大きさは本土と同じスケール）。'}
       </p>
     </div>
   );
