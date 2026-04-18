@@ -5,12 +5,26 @@ const TOP_N = 15;
 const BAR_HEIGHT = 38;
 const GAP = 4;
 
-export default function BarChartRace({ data, dataType = 'production' }) {
+export default function BarChartRace({ data, dataType = 'production', excludePrefs }) {
   const { years: allYears, salesByYear, productionByYear, regions, regionColors } = data;
 
-  const sourceByYear = dataType === 'production' ? productionByYear : salesByYear;
+  const rawSourceByYear = dataType === 'production' ? productionByYear : salesByYear;
+  const excludeSet = useMemo(() => new Set(excludePrefs || []), [excludePrefs]);
+
+  // 除外対象があれば年度データをフィルタして再ソート
+  const sourceByYear = useMemo(() => {
+    if (excludeSet.size === 0) return rawSourceByYear;
+    const filtered = {};
+    for (const [year, arr] of Object.entries(rawSourceByYear)) {
+      filtered[year] = arr
+        .filter(d => !excludeSet.has(d.pref))
+        .sort((a, b) => (b.value || 0) - (a.value || 0));
+    }
+    return filtered;
+  }, [rawSourceByYear, excludeSet]);
+
   const availableYears = useMemo(
-    () => allYears.filter(y => sourceByYear[String(y)]),
+    () => allYears.filter(y => sourceByYear[String(y)] && sourceByYear[String(y)].length > 0),
     [allYears, sourceByYear]
   );
 

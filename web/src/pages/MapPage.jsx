@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import BubbleMap from '../components/BubbleMap';
 import YearSlider from '../components/YearSlider';
 import { SourceBanner } from '../components/SourceBadge';
@@ -10,19 +10,34 @@ const SCALE_MODES = [
   { value: 'share', label: 'シェア（全国比%）', hint: '全国計に対する割合。シェア変化を強調' },
 ];
 
+const BIG3 = ['兵庫', '京都', '新潟'];
+
 export default function MapPage() {
   const { years, salesByYear, productionByYear, regions, regionColors } = salesData;
 
   const [currentYear, setCurrentYear] = useState(years[years.length - 1]);
-  const [dataType, setDataType] = useState('sales'); // 'sales' or 'production'
+  const [dataType, setDataType] = useState('sales');
   const [scaleMode, setScaleMode] = useState('global');
+  const [excludeBig3, setExcludeBig3] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
 
   const availableYears = dataType === 'production'
     ? years.filter(y => productionByYear[String(y)])
     : years;
 
-  const sourceByYear = dataType === 'production' ? productionByYear : salesByYear;
+  const rawSourceByYear = dataType === 'production' ? productionByYear : salesByYear;
+
+  // Big3を除外したデータ
+  const sourceByYear = useMemo(() => {
+    if (!excludeBig3) return rawSourceByYear;
+    const big3Set = new Set(BIG3);
+    const filtered = {};
+    for (const [year, arr] of Object.entries(rawSourceByYear)) {
+      filtered[year] = arr.filter(d => !big3Set.has(d.pref));
+    }
+    return filtered;
+  }, [rawSourceByYear, excludeBig3]);
+
   const yearData = sourceByYear[String(currentYear)] || [];
 
   const handlePlayToggle = useCallback(() => {
@@ -45,10 +60,8 @@ export default function MapPage() {
     }
   }, [isPlaying, availableYears]);
 
-  // 年度の全国計（スライダー横に表示）
   const yearTotal = yearData.reduce((s, d) => s + (d.value || 0), 0);
 
-  // 動きが見えない理由の注意書き
   const sharePct = dataType === 'sales'
     ? '販売数量は人口分布に連動するため都道府県シェアが安定しています。動きを見るには「シェア」または「製成数量」をお試しください。'
     : '';
@@ -102,6 +115,24 @@ export default function MapPage() {
         ))}
       </div>
 
+      {/* Big 3 除外トグル */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <label className="inline-flex items-center gap-2 text-sm cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={excludeBig3}
+            onChange={e => setExcludeBig3(e.target.checked)}
+            className="w-4 h-4 accent-stone-700"
+          />
+          <span>
+            主要3県（<span className="font-medium">兵庫・京都・新潟</span>）を除外
+          </span>
+        </label>
+        <span className="text-xs text-stone-400">
+          — 他県の動きが見やすくなります
+        </span>
+      </div>
+
       {dataType === 'sales' && scaleMode === 'year' && (
         <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 p-2 rounded">
           ⚠ {sharePct}
@@ -118,7 +149,8 @@ export default function MapPage() {
       />
 
       <div className="text-xs text-stone-500 text-center">
-        {currentYear}年 全国計: <span className="font-bold text-stone-700">{Math.round(yearTotal).toLocaleString()} kL</span>
+        {currentYear}年 {excludeBig3 ? '全国計(3県除く)' : '全国計'}:{' '}
+        <span className="font-bold text-stone-700">{Math.round(yearTotal).toLocaleString()} kL</span>
       </div>
 
       <BubbleMap
@@ -128,6 +160,7 @@ export default function MapPage() {
         regionColors={regionColors}
         allYearsData={sourceByYear}
         scaleMode={scaleMode}
+        excludePrefs={excludeBig3 ? BIG3 : []}
       />
 
       {/* 凡例 */}

@@ -17,8 +17,8 @@ const WIDTH = 1000;
 const HEIGHT = 900;
 const MARGIN = { top: 10, right: 10, bottom: 10, left: 10 };
 
-// クリップ対象（バブルを非表示にする都道府県）
-const EXCLUDED_PREFS = new Set(['沖縄']);
+// 地理的にクリップする都道府県（データがない沖縄）
+const GEO_EXCLUDED = new Set(['沖縄']);
 
 /**
  * BubbleMap
@@ -27,8 +27,17 @@ const EXCLUDED_PREFS = new Set(['沖縄']);
  *  - 'global'  : 全期間の最大値を基準にスケール固定 → 経年縮小が見える（既定）
  *  - 'year'    : その年の最大値を基準に正規化
  *  - 'share'   : 全国計に対するシェア(%)でスケール
+ *
+ * excludePrefs: ユーザーが明示的に除外したい都道府県の配列（バブルも地図境界線も非表示）
  */
-export default function BubbleMap({ yearData, year, regions, regionColors, allYearsData, scaleMode = 'global' }) {
+export default function BubbleMap({ yearData, year, regions, regionColors, allYearsData, scaleMode = 'global', excludePrefs }) {
+  const userExcluded = useMemo(() => new Set(excludePrefs || []), [excludePrefs]);
+  // 最終的な除外セット（地理的 + ユーザー指定）
+  const EXCLUDED_PREFS = useMemo(() => {
+    const s = new Set(GEO_EXCLUDED);
+    userExcluded.forEach(p => s.add(p));
+    return s;
+  }, [userExcluded]);
   const [topoData, setTopoData] = useState(null);
   const [hoveredPref, setHoveredPref] = useState(null);
 

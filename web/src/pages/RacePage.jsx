@@ -3,8 +3,11 @@ import BarChartRace from '../components/BarChartRace';
 import { SourceBanner } from '../components/SourceBadge';
 import salesData from '../data/salesByPref.json';
 
+const BIG3 = ['兵庫', '京都', '新潟'];
+
 export default function RacePage() {
   const [dataType, setDataType] = useState('production');
+  const [excludeBig3, setExcludeBig3] = useState(false);
 
   const productionSources = ['gaikyo_old', 'estat_nenpo'];
   const salesSources = ['jikeiretsu_13'];
@@ -42,7 +45,29 @@ export default function RacePage() {
         note={dataType === 'production' ? '1997-2006年は旧概況、2007年以降はe-Stat' : ''}
       />
 
-      <BarChartRace data={salesData} dataType={dataType} />
+      {/* Big 3 除外トグル */}
+      <div className="flex items-center gap-2">
+        <label className="inline-flex items-center gap-2 text-sm cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={excludeBig3}
+            onChange={e => setExcludeBig3(e.target.checked)}
+            className="w-4 h-4 accent-stone-700"
+          />
+          <span>
+            主要3県（<span className="font-medium">兵庫・京都・新潟</span>）を除外
+          </span>
+        </label>
+        <span className="text-xs text-stone-400">
+          — 中規模県（秋田・山形・福島・長野等）の動きが見やすくなります
+        </span>
+      </div>
+
+      <BarChartRace
+        data={salesData}
+        dataType={dataType}
+        excludePrefs={excludeBig3 ? BIG3 : []}
+      />
     </div>
   );
 }
