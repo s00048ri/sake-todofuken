@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import * as d3 from 'd3';
 import * as topojson from 'topojson-client';
 import centroids from '../data/prefectures.json';
+import { useI18n } from '../i18n/index.jsx';
 
 // 本州・北海道・四国・九州 (本土) に限定
 const MAP_BOUNDS = {
@@ -39,6 +40,7 @@ const INSET = {
  * 沖縄は本土の地理的範囲外のため、左上インセットに同一radiusScaleで別枠表示。
  */
 export default function BubbleMap({ yearData, year, regions, regionColors, allYearsData, scaleMode = 'global', excludePrefs }) {
+  const { t, lang, pref: tPref, region: tRegion } = useI18n();
   const [topoData, setTopoData] = useState(null);
   const [hoveredPref, setHoveredPref] = useState(null);
 
@@ -211,7 +213,7 @@ export default function BubbleMap({ yearData, year, regions, regionColors, allYe
             pointerEvents="none"
             style={{ textShadow: '0 1px 2px rgba(0,0,0,0.6)' }}
           >
-            沖縄
+            {tPref('沖縄')}
           </text>
         )}
       </g>
@@ -286,7 +288,7 @@ export default function BubbleMap({ yearData, year, regions, regionColors, allYe
                     pointerEvents="none"
                     style={{ textShadow: '0 1px 2px rgba(0,0,0,0.6)' }}
                   >
-                    {pref}
+                    {tPref(pref)}
                   </text>
                 )}
               </g>
@@ -317,7 +319,7 @@ export default function BubbleMap({ yearData, year, regions, regionColors, allYe
               fontWeight="bold"
               fill="#57534e"
             >
-              沖縄県（別スケール表示ではありません）
+              {t('map.insetTitle')}
             </text>
             {/* 沖縄県境界 */}
             {okinawaFeature && (
@@ -337,20 +339,20 @@ export default function BubbleMap({ yearData, year, regions, regionColors, allYe
       {/* ツールチップ */}
       {hoveredPref && valueMap[hoveredPref] && (
         <div className="absolute top-4 right-4 bg-white shadow-lg rounded-lg px-4 py-3 text-sm border">
-          <div className="font-bold text-base">{hoveredPref}</div>
-          <div className="text-stone-500">{regions[hoveredPref]}</div>
+          <div className="font-bold text-base">{tPref(hoveredPref)}</div>
+          <div className="text-stone-500">{tRegion(regions[hoveredPref])}</div>
           <div className="mt-1 text-lg font-bold">
             {scaleMode === 'share'
               ? `${valueMap[hoveredPref].toFixed(2)} %`
               : `${Math.round(valueMap[hoveredPref]).toLocaleString()} kL`}
           </div>
-          <div className="text-stone-400 text-xs">{year}年</div>
+          <div className="text-stone-400 text-xs">{year}{lang === 'ja' ? '年' : ''}</div>
         </div>
       )}
 
       <p className="text-xs text-stone-400 text-center mt-1">
-        ※ 本土マップは本州・北海道・四国・九州のみ（南西諸島・小笠原諸島は地理的に除外）。
-        {showInset && ' 沖縄は左上インセット（バブルの大きさは本土と同じスケール）。'}
+        ※ {t('map.mapNote')}
+        {showInset && ` ${t('map.okinawaNote')}`}
       </p>
     </div>
   );

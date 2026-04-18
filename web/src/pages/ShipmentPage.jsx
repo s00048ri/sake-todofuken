@@ -1,36 +1,35 @@
 import { useState } from 'react';
 import { SourceBanner } from '../components/SourceBadge';
 import shipmentData from '../data/shipment.json';
+import { useI18n } from '../i18n/index.jsx';
 
 const YEARS = Object.keys(shipmentData).sort();
 const TOP_N = 20;
 
 export default function ShipmentPage() {
+  const { t, lang, pref: tPref } = useI18n();
   const [year, setYear] = useState(YEARS[YEARS.length - 1]);
-  const [view, setView] = useState('shipment'); // 'shipment' or 'export'
+  const [view, setView] = useState('shipment');
 
   const data = shipmentData[year];
   const isSurvey = data.isSurvey;
 
-  // 値のフォーマット
   const fmt = (v, digits = 0) =>
     v != null ? v.toLocaleString('ja-JP', { maximumFractionDigits: digits }) : '—';
 
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-bold mb-1">出荷・輸出データ</h2>
+        <h2 className="text-lg font-bold mb-1">{t('shipment.title')}</h2>
         <p className="text-sm text-stone-500">
-          {view === 'shipment'
-            ? '都道府県別の課税移出数量（出荷量）と移出先（自県/自局/他局）内訳'
-            : '都道府県別の輸出売上数量・金額・輸出割合'}
+          {view === 'shipment' ? t('shipment.descShipment') : t('shipment.descExport')}
         </p>
       </div>
 
       <SourceBanner
         sources={['gaikyo_new']}
-        period="2019-2024年"
-        note={isSurvey ? '※この年のデータはアンケート集計（悉皆ではない）' : ''}
+        period="2019-2024"
+        note={isSurvey ? t('shipment.surveyNote') : ''}
       />
 
       <div className="flex items-center gap-3 flex-wrap">
@@ -39,24 +38,27 @@ export default function ShipmentPage() {
             onClick={() => setView('shipment')}
             className={`px-3 py-1 text-sm rounded ${view === 'shipment' ? 'bg-stone-800 text-white' : 'bg-stone-200'}`}
           >
-            課税移出数量
+            {t('shipment.tabShipment')}
           </button>
           <button
             onClick={() => setView('export')}
             className={`px-3 py-1 text-sm rounded ${view === 'export' ? 'bg-stone-800 text-white' : 'bg-stone-200'}`}
           >
-            輸出
+            {t('shipment.tabExport')}
           </button>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-sm text-stone-600">年:</label>
+          <label className="text-sm text-stone-600">{t('shipment.yearLabel')}</label>
           <select
             value={year}
-            onChange={e => setYear(e.target.value)}
+            onChange={(e) => setYear(e.target.value)}
             className="text-sm border border-stone-300 rounded px-2 py-1"
           >
-            {YEARS.map(y => (
-              <option key={y} value={y}>{y}年</option>
+            {YEARS.map((y) => (
+              <option key={y} value={y}>
+                {y}
+                {lang === 'ja' ? '年' : ''}
+              </option>
             ))}
           </select>
         </div>
@@ -67,20 +69,20 @@ export default function ShipmentPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-stone-100 text-stone-600 text-xs">
-                <th className="text-left p-2">順位</th>
-                <th className="text-left p-2">都道府県</th>
-                <th className="text-right p-2">合計 (kL)</th>
-                <th className="text-right p-2">自県 (kL)</th>
-                <th className="text-right p-2">自局 (kL)</th>
-                <th className="text-right p-2">他局 (kL)</th>
-                <th className="text-right p-2">自県%</th>
+                <th className="text-left p-2">{t('shipment.cols.rank')}</th>
+                <th className="text-left p-2">{t('shipment.cols.prefecture')}</th>
+                <th className="text-right p-2">{t('shipment.cols.totalKl')}</th>
+                <th className="text-right p-2">{t('shipment.cols.selfPrefKl')}</th>
+                <th className="text-right p-2">{t('shipment.cols.selfBureauKl')}</th>
+                <th className="text-right p-2">{t('shipment.cols.otherBureauKl')}</th>
+                <th className="text-right p-2">{t('shipment.cols.selfPrefPct')}</th>
               </tr>
             </thead>
             <tbody>
               {data.shipments.slice(0, TOP_N).map((row, i) => (
                 <tr key={row.pref} className="border-t border-stone-100 hover:bg-stone-50">
                   <td className="p-2 text-stone-400">{i + 1}</td>
-                  <td className="p-2 font-medium">{row.pref}</td>
+                  <td className="p-2 font-medium">{tPref(row.pref)}</td>
                   <td className="p-2 text-right font-bold">{fmt(row.total)}</td>
                   <td className="p-2 text-right">{fmt(row.selfPref)}</td>
                   <td className="p-2 text-right">{fmt(row.selfBureau)}</td>
@@ -90,29 +92,27 @@ export default function ShipmentPage() {
               ))}
             </tbody>
           </table>
-          <p className="text-xs text-stone-400 mt-2">
-            自県 = 同一都道府県内への移出 / 自局 = 同一国税局管内の他県への移出 / 他局 = 他国税局管内への移出
-          </p>
+          <p className="text-xs text-stone-400 mt-2">{t('shipment.shipmentLegend')}</p>
         </div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-stone-100 text-stone-600 text-xs">
-                <th className="text-left p-2">順位</th>
-                <th className="text-left p-2">都道府県</th>
-                <th className="text-right p-2">事業者数</th>
-                <th className="text-right p-2">国内売上 (kL)</th>
-                <th className="text-right p-2">輸出数量 (kL)</th>
-                <th className="text-right p-2">輸出金額 (百万円)</th>
-                <th className="text-right p-2">輸出割合</th>
+                <th className="text-left p-2">{t('shipment.cols.rank')}</th>
+                <th className="text-left p-2">{t('shipment.cols.prefecture')}</th>
+                <th className="text-right p-2">{t('shipment.cols.businessCount')}</th>
+                <th className="text-right p-2">{t('shipment.cols.domesticKl')}</th>
+                <th className="text-right p-2">{t('shipment.cols.exportKl')}</th>
+                <th className="text-right p-2">{t('shipment.cols.exportMil')}</th>
+                <th className="text-right p-2">{t('shipment.cols.exportRatio')}</th>
               </tr>
             </thead>
             <tbody>
               {data.exports.slice(0, TOP_N).map((row, i) => (
                 <tr key={row.pref} className="border-t border-stone-100 hover:bg-stone-50">
                   <td className="p-2 text-stone-400">{i + 1}</td>
-                  <td className="p-2 font-medium">{row.pref}</td>
+                  <td className="p-2 font-medium">{tPref(row.pref)}</td>
                   <td className="p-2 text-right">{fmt(row.businessCount)}</td>
                   <td className="p-2 text-right">{fmt(row.domesticVolume)}</td>
                   <td className="p-2 text-right font-bold">{fmt(row.exportVolume)}</td>

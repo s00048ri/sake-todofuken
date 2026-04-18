@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import YearSlider from './YearSlider';
+import { useI18n } from '../i18n/index.jsx';
 
 const TOP_N = 15;
 const BAR_HEIGHT = 38;
 const GAP = 4;
 
 export default function BarChartRace({ data, dataType = 'production', excludePrefs }) {
+  const { pref: tPref, region: tRegion } = useI18n();
   const { years: allYears, salesByYear, productionByYear, regions, regionColors } = data;
 
   const rawSourceByYear = dataType === 'production' ? productionByYear : salesByYear;
@@ -109,8 +111,8 @@ export default function BarChartRace({ data, dataType = 'production', excludePre
                 transition: 'transform 0.4s ease, opacity 0.4s ease',
               }}
             >
-              <span className="w-16 text-right text-sm font-medium pr-2 shrink-0">
-                {item.pref}
+              <span className="w-20 text-right text-sm font-medium pr-2 shrink-0">
+                {tPref(item.pref)}
               </span>
               <div
                 className="h-full rounded-r-md flex items-center justify-end pr-2 relative"
@@ -135,7 +137,7 @@ export default function BarChartRace({ data, dataType = 'production', excludePre
         {Object.entries(regionColors).map(([region, color]) => (
           <div key={region} className="flex items-center gap-1">
             <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: color }} />
-            <span>{region}</span>
+            <span>{tRegion(region)}</span>
           </div>
         ))}
       </div>
