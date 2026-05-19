@@ -14,11 +14,12 @@ const EXCLUDE_PRESETS = {
 
 export default function MapPage() {
   const { t, lang, region: tRegion } = useI18n();
-  const { years, salesByYear, productionByYear, regions, regionColors } = salesData;
+  const { years, salesByYear, productionByYear, populationByYear, regions, regionColors } = salesData;
 
   const [dataType, setDataType] = useState(DEFAULT_DATA_TYPE);
   const [scaleMode, setScaleMode] = useState('global');
   const [excludeFlags, setExcludeFlags] = useState({ production: false, sales: false });
+  const [perCapitaMode, setPerCapitaMode] = useState('off');
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(500);
 
@@ -39,6 +40,8 @@ export default function MapPage() {
   useEffect(() => {
     setCurrentYear(availableYears[0]);
     setIsPlaying(false);
+    // 製成数量では人口補正は無効
+    if (dataType === 'production') setPerCapitaMode('off');
   }, [dataType, availableYears]);
 
   const rawSourceByYear = dataType === 'production' ? productionByYear : salesByYear;
@@ -171,6 +174,41 @@ export default function MapPage() {
         </span>
       </div>
 
+      {/* 人口補正トグル (販売数量のみ) */}
+      {dataType === 'sales' && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-stone-500">{t('perCapita.label')}:</span>
+          <button
+            onClick={() => setPerCapitaMode('off')}
+            className={`px-2 py-1 text-xs rounded transition-colors ${
+              perCapitaMode === 'off' ? 'bg-stone-800 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+            }`}
+          >
+            {t('perCapita.modeOff')}
+          </button>
+          <button
+            onClick={() => setPerCapitaMode('total')}
+            className={`px-2 py-1 text-xs rounded transition-colors ${
+              perCapitaMode === 'total' ? 'bg-stone-800 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+            }`}
+          >
+            {t('perCapita.modeTotal')}
+          </button>
+          <button
+            onClick={() => setPerCapitaMode('adult')}
+            className={`px-2 py-1 text-xs rounded transition-colors ${
+              perCapitaMode === 'adult' ? 'bg-stone-800 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+            }`}
+            title={t('perCapita.adultUnavailable')}
+          >
+            {t('perCapita.modeAdult')}
+          </button>
+          {perCapitaMode === 'adult' && (
+            <span className="text-xs text-amber-600">⚠ {t('perCapita.adultUnavailable')}</span>
+          )}
+        </div>
+      )}
+
       {dataType === 'sales' && scaleMode === 'year' && (
         <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 p-2 rounded">
           ⚠ {t('map.salesNote')}
@@ -205,6 +243,8 @@ export default function MapPage() {
         allYearsData={sourceByYear}
         scaleMode={scaleMode}
         excludePrefs={excludePrefs}
+        perCapitaMode={dataType === 'sales' ? perCapitaMode : 'off'}
+        populationByYear={populationByYear}
       />
 
       <div className="flex flex-wrap gap-3 mt-2 justify-center text-xs">

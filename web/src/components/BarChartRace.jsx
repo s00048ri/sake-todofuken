@@ -6,27 +6,60 @@ const TOP_N = 15;
 const BAR_HEIGHT = 38;
 const GAP = 4;
 
-export default function BarChartRace({ data, dataType = 'production', excludePrefs }) {
-  const { pref: tPref, region: tRegion } = useI18n();
-  const { years: allYears, salesByYear, productionByYear, regions, regionColors } = data;
+/**
+ * BarChartRace
+ *
+ * perCapitaMode:
+ *  - 'off'   : 絶対量（kL）— 既定
+ *  - 'total' : 1人あたり（kL → L/人換算、総人口で割る）
+ *  - 'adult' : 15歳以上1人あたり（データがある年のみ、無い年は'total'にフォールバック）
+ */
+export default function BarChartRace({ data, dataType = 'production', excludePrefs, perCapitaMode = 'off' }) {
+  const { t, pref: tPref, region: tRegion } = useI18n();
+  const { years: allYears, salesByYear, productionByYear, populationByYear, regions, regionColors } = data;
 
   const rawSourceByYear = dataType === 'production' ? productionByYear : salesByYear;
   const excludeSet = useMemo(() => new Set(excludePrefs || []), [excludePrefs]);
 
-  // 除外対象があれば年度データをフィルタして再ソート
+  // 1. 除外フィルタ + 2. 人口補正 を統合した再ソート
   const sourceByYear = useMemo(() => {
-    if (excludeSet.size === 0) return rawSourceByYear;
-    const filtered = {};
+    const out = {};
     for (const [year, arr] of Object.entries(rawSourceByYear)) {
-      filtered[year] = arr
-        .filter(d => !excludeSet.has(d.pref))
+      const popYear = populationByYear?.[year];
+      const filtered = arr
+        .filter((d) => !excludeSet.has(d.pref))
+        .map((d) => {
+          let value = d.value;
+          if (perCapitaMode !== 'off' && popYear) {
+            const popInfo = popYear[d.pref];
+            if (popInfo) {
+              // 適切な人口を選択（adultモードでデータ無ければtotalにフォールバック）
+              let pop = perCapitaMode === 'adult' ? popInfo.age15plus : popInfo.total;
+              if (perCapitaMode === 'adult' && !pop) pop = popInfo.total;
+              if (pop && pop > 0) {
+                // kL → L換算して人口で割る（L/人）
+                value = (d.value * 1000) / pop;
+              } else {
+                value = null;
+              }
+            } else {
+              value = null;
+            }
+          }
+          return value != null ? { pref: d.pref, value } : null;
+        })
+        .filter((d) => d !== null)
         .sort((a, b) => (b.value || 0) - (a.value || 0));
+
+      if (filtered.length > 0) {
+        out[year] = filtered;
+      }
     }
-    return filtered;
-  }, [rawSourceByYear, excludeSet]);
+    return out;
+  }, [rawSourceByYear, excludeSet, populationByYear, perCapitaMode]);
 
   const availableYears = useMemo(
-    () => allYears.filter(y => sourceByYear[String(y)] && sourceByYear[String(y)].length > 0),
+    () => allYears.filter((y) => sourceByYear[String(y)] && sourceByYear[String(y)].length > 0),
     [allYears, sourceByYear]
   );
 
@@ -35,11 +68,18 @@ export default function BarChartRace({ data, dataType = 'production', excludePre
   const [speed, setSpeed] = useState(500);
   const intervalRef = useRef(null);
 
-  // Reset year index when dataType changes
+  // dataType or perCapitaMode が変わったら年度をリセット
   useEffect(() => {
     setYearIndex(0);
     setIsPlaying(false);
-  }, [dataType]);
+  }, [dataType, perCapitaMode]);
+
+  // yearIndex が availableYears の範囲外になった場合の補正
+  useEffect(() => {
+    if (yearIndex >= availableYears.length) {
+      setYearIndex(Math.max(0, availableYears.length - 1));
+    }
+  }, [yearIndex, availableYears.length]);
 
   const currentYear = availableYears[yearIndex] || availableYears[0];
   const yearData = sourceByYear[String(currentYear)] || [];
@@ -47,9 +87,8 @@ export default function BarChartRace({ data, dataType = 'production', excludePre
   const maxValue = topData.length > 0 ? topData[0].value : 1;
 
   const togglePlay = useCallback(() => {
-    setIsPlaying(prev => {
+    setIsPlaying((prev) => {
       if (prev) return false;
-      // 終端まで到達していたら最古年度に戻してから再生
       if (yearIndex >= availableYears.length - 1) {
         setYearIndex(0);
       }
@@ -74,12 +113,28 @@ export default function BarChartRace({ data, dataType = 'production', excludePre
     };
   }, [isPlaying, speed, availableYears.length]);
 
-  const handleYearChange = useCallback((year) => {
-    const idx = availableYears.indexOf(year);
-    if (idx >= 0) setYearIndex(idx);
-  }, [availableYears]);
+  const handleYearChange = useCallback(
+    (year) => {
+      const idx = availableYears.indexOf(year);
+      if (idx >= 0) setYearIndex(idx);
+    },
+    [availableYears]
+  );
 
   const totalHeight = TOP_N * (BAR_HEIGHT + GAP);
+
+  // 値のフォーマット
+  const formatValue = (v) => {
+    if (perCapitaMode !== 'off') {
+      // L/人で1桁の精度
+      return v >= 10 ? v.toFixed(1) : v.toFixed(2);
+    }
+    return Math.round(v).toLocaleString();
+  };
+
+  const unitLabel =
+    perCapitaMode === 'adult' ? t('perCapita.unitAdult') :
+    perCapitaMode === 'total' ? t('perCapita.unit') : '';
 
   return (
     <div className="w-full">
@@ -124,7 +179,8 @@ export default function BarChartRace({ data, dataType = 'production', excludePre
                 }}
               >
                 <span className="text-white text-xs font-bold whitespace-nowrap drop-shadow">
-                  {Math.round(item.value).toLocaleString()}
+                  {formatValue(item.value)}
+                  {unitLabel && <span className="ml-1 opacity-80">{unitLabel}</span>}
                 </span>
               </div>
             </div>

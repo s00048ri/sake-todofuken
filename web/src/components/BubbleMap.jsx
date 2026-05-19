@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import * as d3 from 'd3';
 import * as topojson from 'topojson-client';
 import centroids from '../data/prefectures.json';
@@ -39,7 +39,17 @@ const INSET = {
  *
  * 沖縄は本土の地理的範囲外のため、左上インセットに同一radiusScaleで別枠表示。
  */
-export default function BubbleMap({ yearData, year, regions, regionColors, allYearsData, scaleMode = 'global', excludePrefs }) {
+export default function BubbleMap({
+  yearData,
+  year,
+  regions,
+  regionColors,
+  allYearsData,
+  scaleMode = 'global',
+  excludePrefs,
+  perCapitaMode = 'off',
+  populationByYear,
+}) {
   const { t, lang, pref: tPref, region: tRegion } = useI18n();
   const [topoData, setTopoData] = useState(null);
   const [hoveredPref, setHoveredPref] = useState(null);
@@ -107,43 +117,69 @@ export default function BubbleMap({ yearData, year, regions, regionColors, allYe
     return { mainlandFeatures: mainland, okinawaFeature: okinawa };
   }, [topoData, userExcluded]);
 
+  // 人口で補正した値を返すヘルパー
+  const getAdjustedValue = useCallback(
+    (pref, value, popYear) => {
+      if (perCapitaMode === 'off' || !popYear) return value;
+      const popInfo = popYear[pref];
+      if (!popInfo) return null;
+      let pop = perCapitaMode === 'adult' ? popInfo.age15plus : popInfo.total;
+      if (perCapitaMode === 'adult' && !pop) pop = popInfo.total;
+      if (!pop || pop <= 0) return null;
+      // kL → L換算で人口で割る → L/人
+      return (value * 1000) / pop;
+    },
+    [perCapitaMode]
+  );
+
+  // 当該年の人口データ
+  const popYear = useMemo(() => populationByYear?.[String(year)], [populationByYear, year]);
+
   // 年度合計（シェアモード用）— 沖縄含む
   const yearTotal = useMemo(() => {
     if (!yearData) return 0;
     return yearData
-      .filter(d => !userExcluded.has(d.pref))
-      .reduce((sum, d) => sum + (d.value || 0), 0);
-  }, [yearData, userExcluded]);
+      .filter((d) => !userExcluded.has(d.pref))
+      .reduce((sum, d) => {
+        const v = getAdjustedValue(d.pref, d.value || 0, popYear);
+        return sum + (v || 0);
+      }, 0);
+  }, [yearData, userExcluded, getAdjustedValue, popYear]);
 
   // 値のマップ（沖縄も含む）
   const valueMap = useMemo(() => {
     const map = {};
     if (yearData) {
-      yearData.forEach(d => {
+      yearData.forEach((d) => {
         if (userExcluded.has(d.pref)) return;
+        const adjusted = getAdjustedValue(d.pref, d.value || 0, popYear);
+        if (adjusted == null) return;
         if (scaleMode === 'share' && yearTotal > 0) {
-          map[d.pref] = ((d.value || 0) / yearTotal) * 100;
+          map[d.pref] = (adjusted / yearTotal) * 100;
         } else {
-          map[d.pref] = d.value || 0;
+          map[d.pref] = adjusted;
         }
       });
     }
     return map;
-  }, [yearData, scaleMode, yearTotal, userExcluded]);
+  }, [yearData, scaleMode, yearTotal, userExcluded, getAdjustedValue, popYear]);
 
-  // スケールのドメイン最大値（沖縄含む）
+  // スケールのドメイン最大値（沖縄含む、人口補正対応）
   const domainMax = useMemo(() => {
     if (scaleMode === 'share') {
+      // シェアモード: 全期間最大シェア
       if (!allYearsData) return 15;
       let maxShare = 0;
-      Object.values(allYearsData).forEach(arr => {
-        const total = arr
-          .filter(d => !userExcluded.has(d.pref))
-          .reduce((s, d) => s + (d.value || 0), 0);
+      Object.entries(allYearsData).forEach(([yr, arr]) => {
+        const pYear = populationByYear?.[yr];
+        const adjusted = arr
+          .filter((d) => !userExcluded.has(d.pref))
+          .map((d) => getAdjustedValue(d.pref, d.value || 0, pYear))
+          .filter((v) => v != null);
+        const total = adjusted.reduce((s, v) => s + v, 0);
         if (total > 0) {
-          arr.forEach(d => {
-            if (userExcluded.has(d.pref)) return;
-            const share = ((d.value || 0) / total) * 100;
+          adjusted.forEach((v) => {
+            const share = (v / total) * 100;
             if (share > maxShare) maxShare = share;
           });
         }
@@ -152,19 +188,23 @@ export default function BubbleMap({ yearData, year, regions, regionColors, allYe
     }
     if (scaleMode === 'global' && allYearsData) {
       let maxVal = 0;
-      Object.values(allYearsData).forEach(arr => {
-        arr.forEach(d => {
+      Object.entries(allYearsData).forEach(([yr, arr]) => {
+        const pYear = populationByYear?.[yr];
+        arr.forEach((d) => {
           if (userExcluded.has(d.pref)) return;
-          if ((d.value || 0) > maxVal) maxVal = d.value;
+          const v = getAdjustedValue(d.pref, d.value || 0, pYear);
+          if (v != null && v > maxVal) maxVal = v;
         });
       });
-      return maxVal;
+      return maxVal || 1;
     }
     if (!yearData || yearData.length === 0) return 1;
-    return Math.max(
-      ...yearData.filter(d => !userExcluded.has(d.pref)).map(d => d.value || 0)
-    );
-  }, [scaleMode, yearData, allYearsData, userExcluded]);
+    const vals = yearData
+      .filter((d) => !userExcluded.has(d.pref))
+      .map((d) => getAdjustedValue(d.pref, d.value || 0, popYear))
+      .filter((v) => v != null);
+    return vals.length > 0 ? Math.max(...vals) : 1;
+  }, [scaleMode, yearData, allYearsData, userExcluded, getAdjustedValue, popYear, populationByYear]);
 
   const radiusScale = useMemo(() => {
     return d3.scaleSqrt().domain([0, domainMax]).range([3, 60]);
@@ -337,16 +377,25 @@ export default function BubbleMap({ yearData, year, regions, regionColors, allYe
       </svg>
 
       {/* ツールチップ */}
-      {hoveredPref && valueMap[hoveredPref] && (
+      {hoveredPref && valueMap[hoveredPref] != null && (
         <div className="absolute top-4 right-4 bg-white shadow-lg rounded-lg px-4 py-3 text-sm border">
           <div className="font-bold text-base">{tPref(hoveredPref)}</div>
           <div className="text-stone-500">{tRegion(regions[hoveredPref])}</div>
           <div className="mt-1 text-lg font-bold">
             {scaleMode === 'share'
               ? `${valueMap[hoveredPref].toFixed(2)} %`
+              : perCapitaMode !== 'off'
+              ? `${valueMap[hoveredPref] >= 10
+                  ? valueMap[hoveredPref].toFixed(1)
+                  : valueMap[hoveredPref].toFixed(2)} ${
+                  perCapitaMode === 'adult' ? t('perCapita.unitAdult') : t('perCapita.unit')
+                }`
               : `${Math.round(valueMap[hoveredPref]).toLocaleString()} kL`}
           </div>
-          <div className="text-stone-400 text-xs">{year}{lang === 'ja' ? '年' : ''}</div>
+          <div className="text-stone-400 text-xs">
+            {year}
+            {lang === 'ja' ? '年' : ''}
+          </div>
         </div>
       )}
 

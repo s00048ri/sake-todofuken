@@ -58,6 +58,7 @@ def build_sales_json():
     years = sorted(df["year"].unique())
     sales_by_year = {}
     production_by_year = {}
+    population_by_year = {}  # 人口データ（1人あたり計算用、千人単位）
 
     for year in years:
         yr = df[df["year"] == year]
@@ -79,6 +80,20 @@ def build_sales_json():
                 for _, row in prod_rows.iterrows()
             ]
 
+        # 人口データ（千人単位）
+        if "population_total_k" in yr.columns:
+            pop_rows = yr[yr["population_total_k"].notna()]
+            year_pop = {}
+            for _, row in pop_rows.iterrows():
+                total_k = row["population_total_k"]
+                age15_k = row.get("age_15_plus_k")
+                year_pop[row["prefecture"]] = {
+                    "total": int(round(total_k * 1000)) if pd.notna(total_k) else None,
+                    "age15plus": int(round(age15_k * 1000)) if pd.notna(age15_k) else None,
+                }
+            if year_pop:
+                population_by_year[str(int(year))] = year_pop
+
     result = {
         "years": [int(y) for y in years],
         "prefectures": PREFECTURES_ORDER,
@@ -86,11 +101,13 @@ def build_sales_json():
         "regionColors": REGION_COLORS,
         "salesByYear": sales_by_year,
         "productionByYear": production_by_year,
+        "populationByYear": population_by_year,
     }
 
     out_path = DATA_OUT / "salesByPref.json"
     out_path.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
-    print(f"  → {out_path.name} ({len(years)}年, {len(sales_by_year)}年販売, {len(production_by_year)}年製成)")
+    print(f"  → {out_path.name} ({len(years)}年, {len(sales_by_year)}年販売, "
+          f"{len(production_by_year)}年製成, {len(population_by_year)}年人口)")
 
 
 def build_type_json():

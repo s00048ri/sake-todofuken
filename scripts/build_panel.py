@@ -92,6 +92,13 @@ def build_main_panel():
     # 統合
     df = df_sales.merge(df_prod, on=["year", "prefecture"], how="outer")
 
+    # 人口データを統合
+    pop_path = PROCESSED_DIR / "population_by_pref.csv"
+    if pop_path.exists():
+        df_pop = pd.read_csv(pop_path)
+        print(f"  人口データ: {len(df_pop)}件 ({df_pop['year'].min()}-{df_pop['year'].max()}年)")
+        df = df.merge(df_pop, on=["year", "prefecture"], how="left")
+
     df = add_ordering(df)
     df = df.sort_values(["year", "pref_order"]).drop(columns=["pref_order"])
 

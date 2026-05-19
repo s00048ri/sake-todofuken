@@ -5,19 +5,19 @@ import salesData from '../data/salesByPref.json';
 import { useI18n } from '../i18n/index.jsx';
 
 const EXCLUDE_PRESETS_MAP = {
-  production: { prefs: ['兵庫', '京都', '新潟'], labelKey: 'exclude.productionLabel', hintKey: 'exclude.productionHint' },
-  sales: { prefs: ['東京'], labelKey: 'exclude.salesLabel', hintKey: 'exclude.salesHint' },
+  production: { prefs: ['兵庫', '京都', '新潟'] },
+  sales: { prefs: ['東京'] },
 };
 
 export default function RacePage() {
   const { t, lang } = useI18n();
   const [dataType, setDataType] = useState('production');
   const [excludeFlags, setExcludeFlags] = useState({ production: false, sales: false });
+  const [perCapitaMode, setPerCapitaMode] = useState('off'); // 'off' | 'total' | 'adult'
 
   const preset = EXCLUDE_PRESETS_MAP[dataType];
   const excluded = excludeFlags[dataType];
 
-  // 英語時は "Top 3 (Hyogo, Kyoto, Niigata)" のように表示
   const excludeLabel =
     dataType === 'production'
       ? lang === 'en'
@@ -30,6 +30,9 @@ export default function RacePage() {
   const checkboxPrefix = lang === 'en' ? 'Exclude ' : '';
   const checkboxSuffix = lang === 'en' ? '' : ' を除外';
 
+  // 人口補正は販売数量のみで意味がある
+  const showPerCapita = dataType === 'sales';
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -41,7 +44,10 @@ export default function RacePage() {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => setDataType('production')}
+            onClick={() => {
+              setDataType('production');
+              setPerCapitaMode('off');
+            }}
             className={`px-3 py-1 text-sm rounded ${dataType === 'production' ? 'bg-stone-800 text-white' : 'bg-stone-200'}`}
           >
             {t('dataType.production')}
@@ -60,6 +66,41 @@ export default function RacePage() {
         period={dataType === 'production' ? t('period.production') : t('period.sales')}
         note={dataType === 'production' ? t('race.productionNote') : ''}
       />
+
+      {/* 人口補正トグル (販売数量のみ) */}
+      {showPerCapita && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-stone-500">{t('perCapita.label')}:</span>
+          <button
+            onClick={() => setPerCapitaMode('off')}
+            className={`px-2 py-1 text-xs rounded transition-colors ${
+              perCapitaMode === 'off' ? 'bg-stone-800 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+            }`}
+          >
+            {t('perCapita.modeOff')}
+          </button>
+          <button
+            onClick={() => setPerCapitaMode('total')}
+            className={`px-2 py-1 text-xs rounded transition-colors ${
+              perCapitaMode === 'total' ? 'bg-stone-800 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+            }`}
+          >
+            {t('perCapita.modeTotal')}
+          </button>
+          <button
+            onClick={() => setPerCapitaMode('adult')}
+            className={`px-2 py-1 text-xs rounded transition-colors ${
+              perCapitaMode === 'adult' ? 'bg-stone-800 text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+            }`}
+            title={t('perCapita.adultUnavailable')}
+          >
+            {t('perCapita.modeAdult')}
+          </button>
+          {perCapitaMode === 'adult' && (
+            <span className="text-xs text-amber-600">⚠ {t('perCapita.adultUnavailable')}</span>
+          )}
+        </div>
+      )}
 
       <div className="flex items-center gap-2 flex-wrap">
         <label className="inline-flex items-center gap-2 text-sm cursor-pointer select-none">
@@ -82,7 +123,12 @@ export default function RacePage() {
         </span>
       </div>
 
-      <BarChartRace data={salesData} dataType={dataType} excludePrefs={excluded ? preset.prefs : []} />
+      <BarChartRace
+        data={salesData}
+        dataType={dataType}
+        excludePrefs={excluded ? preset.prefs : []}
+        perCapitaMode={showPerCapita ? perCapitaMode : 'off'}
+      />
     </div>
   );
 }
